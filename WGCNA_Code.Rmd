@@ -1,73 +1,111 @@
-## WGCNA R Code
-## Download data to follow along: "MB.0.03.subsample.fn.txt", "OxygenMatrixMonterey.csv"
-
+---
+title: "WCGNA on microbiome tutorial"
+subtitle: "Comparacion de Pacientes con EPOC vs Controles"
+date: '2022-06-22'
+output: 
+  html_document:
+    toc: true # table of content true
+    toc_depth: 3  # upto three depths of headings (specified by #, ## and ###)
+    number_sections: true  ## if you want number sections at each table header
+    theme: united  # many options for theme, this one is my favorite.---
+---
 
 ## Pre-WGCNA Data preparation
 
-## Read in raw abundance values of OTUs
-## Note: OTUs represent 16S rRNA sequences that were assessed with the universal primers 515F-Y (5'-GTGYCAGCMGCCGCGGTAA) and 926R (5'-CCGYCAATTYMTTTRAGTTT) and were created using a 97% similarity cutoff 
-## Note: These populations have been previously subsampled to the smallest library size
-## Note: All of the above processing took place in mothur
+Read in raw abundance values of OTUs
+Note: OTUs represent 16S rRNA sequences that were assessed with the universal primers 515F-Y (5'-GTGYCAGCMGCCGCGGTAA) and 926R (5'-CCGYCAATTYMTTTRAGTTT) and were created using a 97% similarity cutoff 
+Note: These populations have been previously subsampled to the smallest library size
+Note: All of the above processing took place in mothur
+
+```{r}
 data<-read.table("MB.0.03.subsample.fn.txt",header=T,na.strings="NA")
+```
 
-## Get rid of first three columns since the OTUs don't actually start until the 4th column
+
+Get rid of first three columns since the OTUs don't actually start until the 4th column
+
+```{r}
 data1 = data[-1][-1][-1]
+```
 
-## You should turn your raw abundance values into a relative abundance matrix and transform it
-## I recommend a Hellinger Transformation (a square root of the relative abundance)--this effectively gives low weight to variables with low counts and many zeros
-## It would also also be possible to do the Logarithmic transformation of Anderson et al. (2006): log_b(x)+1 for X>0 and zeros are left as zeros
-library("vegan", lib.loc="~/R/win-library/3.3")
+You should turn your raw abundance values into a relative abundance matrix and transform it
+I recommend a Hellinger Transformation (a square root of the relative abundance). This effectively gives low weight to variables with low counts and many zeros
+It would also also be possible to do the Logarithmic transformation of Anderson et al. (2006): log_b(x)+1 for X>0 and zeros are left as zeros
+
+```{r}
+library("vegan")
 HellingerData<-decostand(data1,method = "hellinger")
 #AndersonData<-decostand(data1,method = "log", logbase=2)
 
-## You have to limit the OTUs to the most frequent ones (ones that occur in multiple samples so that you can measure co-occurance across samples)
-## I just looked at my data file and looked for where zeros became extremely common. This was easy because mothur sorts the OTUs according to abundance
-## If you would like a more objective way of selecting the OTUs or if your OTUs are not sorted you then this code may help:
-## lessdata <- data1[,colSums(data1) > 0.05] ##Though you will have to decide what cutoff works best for your data
-## You also have to reattach Group Name column
+```
+
+
+You have to limit the OTUs to the most frequent ones (ones that occur in multiple samples so that you can measure co-occurance across samples)
+I just looked at my data file and looked for where zeros became extremely common. This was easy because mothur sorts the OTUs according to abundance
+If you would like a more objective way of selecting the OTUs or if your OTUs are not sorted you then this code may help:
+
+```{r}
+lessdata <- data1[,colSums(data1) > 0.05] ## Though you will have to decide what cutoff works best for your data
+```
+You also have to reattach Group Name column
+```{r}
 RelAbun1 = data.frame(data[2],HellingerData[1:750])
+RelAbun1[1:6,1:6]
+```
 
-## Write file
+
+Write file
+```{r}
 write.table(RelAbun1, file = "MontereyRelAbun.txt", sep="\t")
+```
 
 
-##################################################################################
-##################################################################################
-##################################################################################
+
 ## WGCNA: Weighted Gene Correlation Network Analysis
-## There is a lot of great documentation online by the authors (https://horvath.genetics.ucla.edu/html/CoexpressionNetwork/Rpackages/WGCNA/Tutorials/)
-## The following shows my application of it to 16S rRNA abundance data I had
+There is a lot of great documentation online by the authors (https://horvath.genetics.ucla.edu/html/CoexpressionNetwork/Rpackages/WGCNA/Tutorials/)
+The following shows my application of it to 16S rRNA abundance data I had
+```{r}
+library("WGCNA")
+```
+
+Note: If you see gene is written it actually means taxon or OTU
 
 
-library("WGCNA", lib.loc="~/R/win-library/3.3")
+### 1 Start and visualizing data
 
-## Note: If you see gene is written it actually means taxon or OTU
+Bring data in:
 
-##################################################################################
-
-## 1 Start and visualizing data
-
-## Bring data in:
+```{r, message=FALSE, warning=F}
 OTUs<-read.table("MontereyRelAbun.txt",header=T,sep="\t")
 dim(OTUs);
-names(OTUs);
 
-## Turn the first column (sample name) into row names (so that only OTUs make up actual columns):
+library(dplyr)
+names(OTUs) %>% tail(10);
+```
+Turn the first column (sample name) into row names (so that only OTUs make up actual columns):
+
+```{r}
 datExpr0 = as.data.frame((OTUs[,-c(1)]));
 names(datExpr0) = names(OTUs)[-c(1)];
 rownames(datExpr0) = OTUs$Group;
+```
 
-##################################################################################
 
-## Check Data for excessive missingness:
+
+Check Data for excessive missingness:
+```{r}
 gsg = goodSamplesGenes(datExpr0[-1], verbose = 3);
 gsg$allOK
-## TRUE if all OTUs have passed the cut
-## This means that when you limited your OTUs to the most common OTUs above that you didn't leave any in that had too many zeros
-## It is still possible that you were too choosy though
-## If you got FALSE here then follow the steps below:
+```
 
-##################################################################################
+
+TRUE if all OTUs have passed the cut
+This means that when you limited your OTUs to the most common OTUs above that you didn't leave any in that had too many zeros
+It is still possible that you were too choosy though. If you got FALSE here then follow the steps below:
+
+
+```{r}
+
 ## Did not need to do following step with Monterey
 
 ## If false then remove the offenders:
@@ -82,10 +120,14 @@ gsg$allOK
 #  datExpr0 = datExpr0[gsg$goodSamples, gsg$goodGenes]
 #}
 
-##################################################################################
 
-## Cluster the samples to see if there are any obvious outliers
-sampleTree = hclust(dist(datExpr0), method = "average");
+```
+
+
+
+Cluster the samples to see if there are any obvious outliers
+```{r}
+sampleTree = hclust(dist(datExpr0), method = "average"); # que distancia usa???
 
 sizeGrWindow(12,9)
 
@@ -94,9 +136,10 @@ par(mar = c(0,4,2,0))
 
 plot(sampleTree, main = "Sample clustering to detect outliers", sub="", xlab="", cex.lab = 1.5,
      cex.axis = 1.5, cex.main = 2)
-## The sample dendrogram doesn't show any obvious outliers so I didn't remove any samples. If you need to remove some samples the code is below.
+```
+The sample dendrogram doesn't show any obvious outliers so I didn't remove any samples. If you need to remove some samples the code is below.
 
-##################################################################################
+```{r}
 ## No outliers for Monterey so didn't have to do
 
 ## Can remove outlier by changing height cut (could also go in and remove it mannually)
@@ -114,30 +157,48 @@ plot(sampleTree, main = "Sample clustering to detect outliers", sub="", xlab="",
 #nSamples = nrow(datExpr)
 
 ## Note: in subsequent analyses you will have to change datExpr0 to datExpr
-##################################################################################
+```
 
-## Now read in trait (Environmental) data and match with expression samples:
+Now read in trait (Environmental) data and match with expression samples:
+
+```{r}
 traitData = read.csv("OxygenMatrixMonterey.csv");
 dim(traitData)
 names(traitData)
+```
 
-## Form a data frame analogous to expression data (relative abundances of OTUs) that will hold the Environmental traits:
-## Note: used datExpr0 rather than datExpr because we did not have to ditch any samples above:
+
+
+Form a data frame analogous to expression data (relative abundances of OTUs) that will hold the Environmental traits:
+Note: used datExpr0 rather than datExpr because we did not have to ditch any samples above:
+
+```{r}
 OTUSamples = rownames(datExpr0);
 traitRows = match(OTUSamples, traitData$Sample);
 datTraits = traitData[traitRows, -1];
 rownames(datTraits) = traitData[traitRows, 1];
-collectGarbage()
+collectGarbage() # Performs garbage collection until free memory idicators show no change
 
-## Now expression data (relative abundances of OTUs) is in the variable datExpr0 and the corresponding Environmental traits in the variable datTraits
 
-##################################################################################
-## Visualize how Environmental traits relate to clustered samples (visualized with the dendogram from above)
+head(datTraits)
+```
 
-## Again, used datExpr0 for this because we did not need to do certain above steps
-## Can use any of the datTraits for this step
 
-## Re-cluster samples:
+```{r}
+head(datExpr0,10)[1:10,1:10]
+```
+
+Now expression data (relative abundances of OTUs) is in the variable datExpr0 and the corresponding Environmental traits in the variable datTraits
+
+
+#### Visualize how Environmental traits relate to clustered samples (visualized with the dendogram from above)
+
+Again, used datExpr0 for this because we did not need to do certain above steps. Can use any of the datTraits for this step
+
+
+
+```{r}
+#Re-cluster samples:
 sampleTree2 = hclust(dist(datExpr0), method = "average")
 ## Convert traits to a color representation: white means low, red means high, grey means missing entry:
 traitColors = numbers2colors(datTraits[5:13], signed = FALSE);
@@ -145,68 +206,92 @@ traitColors = numbers2colors(datTraits[5:13], signed = FALSE);
 plotDendroAndColors(sampleTree2, traitColors,
                     groupLabels = names(datTraits[5:13]),
                     main = "Sample dendrogram and trait heatmap")
-## White means a low value and red means a high value. Gray means missing entry.
+```
+White means a low value and red means a high value. Gray means missing entry.
 
-## Can also visualze just one trait with the dendrogram:
-traitColors = numbers2colors(datTraits$UpwellingS, signed = FALSE);
+Can also visualze just one trait with the dendrogram:
+
+```{r}
+traitColors = numbers2colors(datTraits$UpwellingS, signed= FALSE);
 plotDendroAndColors(sampleTree2, traitColors,
                     groupLabels = names(datTraits[5:13]),
                     main = "Sample dendrogram and trait heatmap")
+```
 
 
-##################################################################################
 
-## Save
+
+```{r}
+# Save
 save(datExpr0, datTraits, file = "Monterey-dataInput.RData")
 
+```
 
-##################################################################################
-##################################################################################
-##################################################################################
-## 2
+
 
 ## Start of network analysis
 
-## Do this first no matter what way network is made
+Do this first no matter what way network is made
+The following setting is important, do not omit.
 
-## The following setting is important, do not omit.
+
+```{r}
+
 options(stringsAsFactors = FALSE);
-## Allows multi-threading within WGCNA. This helps speed up certain calculations.
-## At present this call is necessary for the code to work.
-## Any error here may be ignored but you may want to update WGCNA if you see one.
+```
+Allows multi-threading within WGCNA. This helps speed up certain calculations.
+At present this call is necessary for the code to work.
+Any error here may be ignored but you may want to update WGCNA if you see one.
 
+```{r}
 enableWGCNAThreads()
 
-## Load the data saved in the first part
+```
+
+Load the data saved in the first part
+```{r}
 lnames = load(file = "Monterey-dataInput.RData");
 
-## The variable lnames contains the names of loaded variables.
+```
+
+The variable lnames contains the names of loaded variables.
+```{r}
 lnames
 
-##################################################################################
-##################################################################################
+```
+
+### Network construction
+```{r}
+
 ## 2a--I did NOT do this method of creating the network for Monterey
 ## This is a one step method of network construction (minimal efforts but the values may not be optimized)
 ## For details visit the code can be found: https://horvath.genetics.ucla.edu/html/CoexpressionNetwork/Rpackages/WGCNA/Tutorials/Consensus-NetworkConstruction-blockwise.pdf
 
-##################################################################################
-##################################################################################
-## 2b
+```
 
-## The following sections provide a step by step construction of the network and module detection:
 
-##################################################################################
+The following sections provide a step by step construction of the network and module detection:
 
-## Choosing soft-thresholding power: analysis of network topology
+#### Choosing soft-thresholding power: analysis of network topology
 
-## Choose a set of soft-thresholding powers:
+Choose a set of soft-thresholding powers:
+```{r}
 powers = c(c(1:10), seq(from = 11, to=30, by=1))
+powers
+```
 
-## Call the network topology analysis function:
-## Note: using a signed network because it preserves the sign of the connection (whether nodes are positively or negatively correlated); this is recommendation by authors of WGCNA:
+
+Call the network topology analysis function
+
+Note: using a signed network because it preserves the sign of the connection (whether nodes are positively or negatively correlated); this is recommendation by authors of WGCNA:
+```{r}
 sft = pickSoftThreshold(datExpr0, powerVector = powers, verbose = 5, networkType = "signed")
+```
 
-## Plot the results:
+
+Plot the results:
+
+```{r, fig.height = 4, fig.width = 13}
 sizeGrWindow(9, 5)
 par(mfrow = c(1,2));
 cex1 = 0.9;
@@ -227,41 +312,58 @@ plot(sft$fitIndices[,1], sft$fitIndices[,5],
      main = paste("Mean connectivity"))
 text(sft$fitIndices[,1], sft$fitIndices[,5], labels=powers, cex=cex1,col="red")
 
-## I picked a soft thresholding value of 10 because it was well above an r2 of 0.8 (it is a local peak for the r2) and the mean connectivity is still above 0
-##################################################################################
+```
 
-## Calculate the adjacencies, using the soft thresholding power of ___:
-## Note: Have to specify signed network again:
+
+I picked a soft thresholding value of 10 because it was well above an r2 of 0.8 (it is a local peak for the r2) and the mean connectivity is still above 0
+
+
+#### Calculate the adjacencies, using the soft thresholding power of 10:
+Note: Have to specify signed network again:
+```{r}
 softPower = 10;
 adjacency = adjacency(datExpr0, power = softPower, type = "signed");
+adjacency[1:5,1:5]
+```
 
-##################################################################################
+#### Transform adjacency into Topological Overlap Matrix and calculate corresponding dissimilarity
 
-## Transform adjacency into Topological Overlap Matrix and calculate corresponding dissimilarity:
-## Note: The TOM you calculate shows the topological similarity of nodes, factoring in the connection strength two nodes share with other "third party" nodes  
-## This will minimize effects of noise and spurious associations:
+Note: The TOM you calculate shows the topological similarity of nodes, factoring in the connection strength two nodes share with other "third party" nodes  
+This will minimize effects of noise and spurious associations:
 
-## Turn adjacency into topological overlap:
-## Note: Have to specify signed network again:
+Turn adjacency into topological overlap:
+Note: Have to specify signed network again:
+```{r}
 TOM = TOMsimilarity(adjacency, TOMType = "signed");
+TOM[1:5, 1:5]
+```
+```{r}
 dissTOM = 1-TOM
+```
 
-##################################################################################
 
-## Create a dendogram using a hierarchical clustering tree
 
-## Call the hierarchical clustering function
+
+#### Create a dendogram using a hierarchical clustering tree
+
+Call the hierarchical clustering function
+```{r}
 TaxaTree = hclust(as.dist(dissTOM), method = "average");
+```
 
-## Plot the resulting clustering tree (dendrogram)
+
+Plot the resulting clustering tree (dendrogram)
+```{r}
 sizeGrWindow(12,9)
 plot(TaxaTree, xlab="", sub="", main = "Taxa clustering on TOM-based dissimilarity",
      labels = FALSE, hang = 0.04);
+```
 
-##################################################################################
 
-## You have to decide the optimal module size for your system and should play around with this value a little
-## I wanted relatively large module so I set the minimum module size relatively high (30):
+You have to decide the optimal module size for your system and should play around with this value a little
+I wanted relatively large module so I set the minimum module size relatively high (30):
+
+```{r}
 minModuleSize = 30;
 
 ## Module identification using dynamic tree cut:
@@ -269,13 +371,18 @@ dynamicMods = cutreeDynamic(dendro = TaxaTree, distM = dissTOM,
                             deepSplit = 2, pamRespectsDendro = FALSE,
                             minClusterSize = minModuleSize);
 table(dynamicMods)
+```
 
-##################################################################################
 
-## Convert numeric lables into colors
+
+
+#### Convert numeric lables into colors
+```{r}
 dynamicColors = labels2colors(dynamicMods)
 table(dynamicColors)
+```
 
+```{r}
 ## Plot the dendrogram with module colors underneath
 sizeGrWindow(8,6)
 plotDendroAndColors(TaxaTree, dynamicColors, "Dynamic Tree Cut",
@@ -283,26 +390,38 @@ plotDendroAndColors(TaxaTree, dynamicColors, "Dynamic Tree Cut",
                     addGuide = TRUE, guideHang = 0.05,
                     main = "Gene dendrogram and module colors")
 
+```
 
-##################################################################################
+### Analyze network
 
-## Quatify co-expression similarity of the entire modules using eigengenes and cluster them based on their correlation:
-## Note: An eigengene is 1st principal component of a module expression matrix and represents a suitably defined average OTU community
+#### Quatify co-expression similarity of the entire modules using eigengenes and cluster them based on their correlation:
+Note: An eigengene is 1st principal component of a module expression matrix and represents a suitably defined average OTU community
+
+
+```{r}
+
 
 ## Calculate eigengenes
 MEList = moduleEigengenes(datExpr0, colors = dynamicColors)
 MEs = MEList$eigengenes
+MEs[1:5, 1:5]
+```
 
+```{r}
 ## Calculate dissimilarity of module eigengenes
 MEDiss = 1-cor(MEs);
 
 ## Cluster module eigengenes
 METree = hclust(as.dist(MEDiss), method = "average");
-
 ## Plot the result
 sizeGrWindow(7, 6)
 plot(METree, main = "Clustering of module eigengenes",
      xlab = "", sub = "")
+```
+
+
+
+
 
 ##################################################################################
 
